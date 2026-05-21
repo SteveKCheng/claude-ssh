@@ -15,7 +15,17 @@ claude-ssh status        # who's connected
 
 ---
 
-## The problem
+## Why this exists
+
+I run servers and CI/CD pipelines from my local machine. I want Claude Code helping me with that work — but with three hard constraints:
+
+1. **I will not install Claude Code on my VPS.** Production boxes stay lean. No Node runtime, no agent process, no extra attack surface, no API keys sitting on a server I expose to the internet. Whatever Claude does to my server, it does *over SSH from my machine*, the same way I do.
+2. **Claude Desktop's SSH integration has been unreliable for me.** Lost sessions, weird hangs, opaque failures. I need something that uses the same battle-tested OpenSSH I already use, with the same config and keys, no separate auth flow to babysit.
+3. **I want the full Claude Code CLI experience over SSH** — multi-step plans, parallel tool calls, file edits via `put`/`get`, real-time visibility — not a chat window that can only run one command at a time.
+
+So: `/ssh` runs locally. Claude Code stays on my laptop. The skill opens **one** SSH connection to the remote host, multiplexes every command through it, and **mirrors every command + output to a log file I can `tail` in another window**. The VPS sees nothing but plain `ssh` and `scp`.
+
+### The day-to-day problem it fixes
 
 You: "Claude, ssh into my server and check disk space."
 
@@ -73,53 +83,62 @@ You see what Claude saw. Live. While it's still typing.
 
 ---
 
-## The passkey / password trick
+## Passwords and hardware keys
 
-The painful part of "AI runs SSH for me" is what happens when the server wants a password or a hardware-key touch — Claude can't type a password and can't tap your YubiKey. Old solutions: "open a new terminal, paste this big command, come back when done." Annoying.
+The painful part of "AI runs SSH for me" is what happens when the server wants a password or a hardware-key touch — Claude can't type a password and can't tap your YubiKey.
 
-This skill exploits Claude Code's `!` prefix. When auth is needed, Claude tells you:
+When `claude-ssh open <host>` detects interactive auth is needed, it prints clear instructions:
 
-> Type this here in Claude (start with `!`):
-> `!claude-ssh auth myserver`
+> Open a normal terminal and run:
+>
+> ```
+> claude-ssh auth myserver
+> ```
+>
+> Enter your password (or touch your hardware key). Leave that window open — `ssh` runs there in the foreground holding the authenticated connection. Come back to Claude and say **"ready"**.
 
-You type it. Claude Code passes the line to your real shell. ssh prompts for your password (or blinks your hardware key). You type / touch — **right there in the same chat**. ssh forks to background. The master is open. You tell Claude "ready". Done.
+One foreground terminal per host. Your password / key touch goes directly to OpenSSH in your shell — Claude never sees it. When you're done, close the window; the session ends explicitly and visibly.
 
-No new windows. No copy-paste of giant commands. The same chat handles both Claude's commands and your interactive auth.
+> **Why not just `!claude-ssh auth` inline?** Claude Code's `!` prefix runs commands but doesn't allocate a real TTY for `ssh`'s password prompt. ssh sees garbled input and rejects auth. A normal terminal window is the path that actually works. (See [`GUIDE.md`](./GUIDE.md#authentication) for the full breakdown.)
 
 ---
 
 ## Installation
 
-### 1. Clone the skill
+> Nothing gets installed on the VPS. Everything below runs on your local machine.
+
+**1. Clone into your Claude skills directory**
+
 ```bash
 # Linux / macOS
-git clone https://github.com/<your-fork>/ssh-skill ~/.claude/skills/ssh
-
-# Windows (PowerShell)
-git clone https://github.com/<your-fork>/ssh-skill $env:USERPROFILE\.claude\skills\ssh
+git clone https://github.com/Infamous0192/claude-ssh ~/.claude/skills/ssh
 ```
-
-### 2. Run the installer once
 ```powershell
-# Windows
-& "$HOME\.claude\skills\ssh\install.ps1"
+# Windows (PowerShell)
+git clone https://github.com/Infamous0192/claude-ssh $env:USERPROFILE\.claude\skills\ssh
 ```
+
+**2. Run the installer once** — drops a `claude-ssh` shim into `~/.local/bin/` and ensures it's on PATH.
+
 ```bash
 # Linux / macOS
 ~/.claude/skills/ssh/install.sh
 ```
+```powershell
+# Windows
+& "$HOME\.claude\skills\ssh\install.ps1"
+```
 
-That drops a `claude-ssh` shim into `~/.local/bin/` and makes sure it's on PATH.
+**3. Allowlist** (optional, but skips the per-call permission prompt) — see [`INSTALL.md`](./INSTALL.md#3-allowlist-recommended).
 
-### 3. Allowlist (optional but recommended)
+**4. Test**
 
-Add to `~/.claude/settings.json` so Claude doesn't prompt on every call. See [`INSTALL.md`](./INSTALL.md).
-
-### 4. Test
 ```bash
 claude-ssh help
-claude-ssh open <your-ssh-alias>
+claude-ssh open <your-ssh-alias>   # any alias from ~/.ssh/config
 ```
+
+> Windows users need [Git for Windows](https://git-scm.com/download/win) — the bundled OpenSSH has [broken `ControlMaster`](https://github.com/PowerShell/Win32-OpenSSH/issues/405). The dispatcher auto-detects Git's `ssh.exe`.
 
 ---
 
@@ -163,7 +182,7 @@ MIT. See [`LICENSE`](./LICENSE). Fork it, ship it, sell it.
 
 ## Contributing
 
-PRs welcome. Especially:
+PRs welcome at [Infamous0192/claude-ssh](https://github.com/Infamous0192/claude-ssh). Especially:
 - More auth-mode coverage (`gpg-agent`, Kerberos, Smart Card)
 - Better Windows-native ssh.exe handling once Microsoft fixes [#405](https://github.com/PowerShell/Win32-OpenSSH/issues/405) (don't hold your breath)
 - Codex / Cursor / Continue ports

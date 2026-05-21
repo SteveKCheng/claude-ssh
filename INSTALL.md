@@ -15,14 +15,16 @@ Why Git for Windows on Windows? Microsoft's bundled `C:\Windows\System32\OpenSSH
 
 ## 1. Clone the skill
 
-```powershell
-# Windows
-git clone https://github.com/<your-fork>/ssh-skill $env:USERPROFILE\.claude\skills\ssh
-```
 ```bash
 # Linux / macOS
-git clone https://github.com/<your-fork>/ssh-skill ~/.claude/skills/ssh
+git clone https://github.com/Infamous0192/claude-ssh ~/.claude/skills/ssh
 ```
+```powershell
+# Windows
+git clone https://github.com/Infamous0192/claude-ssh $env:USERPROFILE\.claude\skills\ssh
+```
+
+> The destination path matters — Claude Code discovers skills inside `~/.claude/skills/`. The folder must be named `ssh` so the skill registers as `/ssh`.
 
 The skill is now discoverable by Claude as `/ssh`.
 
