@@ -46,7 +46,7 @@ EOF
   fi
 
   # Probe non-interactively.
-  if ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new "$h" true >/dev/null 2>&1; then
+  if ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new "$h" exit 0 >/dev/null 2>&1; then
     ssh -M -S "$sock" -fN \
       -o ControlPersist=yes \
       -o ServerAliveInterval=30 \
