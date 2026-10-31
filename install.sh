@@ -29,13 +29,20 @@ fi
 ln -s -- "$skills_rel_dir" "$skills_dir/ssh"
 ln -s -- "$exe_rel_dir/scripts/ssh.sh" "$exe_dir/claude-ssh"
 
-echo ""
-echo "=== Install complete ==="
-echo ""
-echo "Test it:    claude-ssh help"
-echo "Open host:  claude-ssh open <your-ssh-alias>"
-echo ""
-echo "Suggested allowlist for ~/.claude/settings.json:"
-echo ""
-echo "   \"Bash($exe_dir/claude-ssh)\""
-echo ""
+cat << EOF
+=== Established the following symbolic links ===
+
+  $skills_dir/ssh -> $script_dir
+  $exe_dir/claude-ssh -> $script_dir/scripts/ssh.sh
+
+=== Install complete ===
+
+Test it:    claude-ssh help
+Open host:  claude-ssh open <your-ssh-alias>
+
+Suggested allowlist for ~/.claude/settings.json:
+
+  "Bash($exe_dir/claude-ssh)"
+
+EOF
+
