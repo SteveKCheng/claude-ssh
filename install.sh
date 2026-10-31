@@ -1,49 +1,33 @@
-#!/usr/bin/env bash
-# Installer for the /ssh skill on Linux / macOS / WSL.
+#!/bin/sh
+# Installer for the /ssh skill on Linux.
 # Symlinks ~/.local/bin/claude-ssh -> dispatcher so you can call
 # `claude-ssh open <host>` from any shell.
 # Idempotent: safe to run multiple times.
 
-set -euo pipefail
+set -eu
 
-skill_dir="$HOME/.claude/skills/ssh"
-dispatch="$skill_dir/scripts/ssh.sh"
-bin_dir="$HOME/.local/bin"
-link_path="$bin_dir/claude-ssh"
+script_path="$(readlink -f -- "$0")";
+script_dir="$(dirname -- "$script_path")"
 
-if [[ ! -f "$dispatch" ]]; then
-  echo "Skill dispatcher not found at $dispatch" >&2
-  echo "Did the skill get cloned to the right place?" >&2
-  exit 2
+skills_dir="$HOME/.claude/skills"
+exe_dir="$HOME/.local/bin"
+
+
+skills_rel_dir="$(realpath --relative-base="$HOME" --relative-to="$skills_dir" -- "$script_dir")"
+exe_rel_dir="$(realpath --relative-base="$HOME" --relative-to="$exe_dir" -- "$script_dir")"
+
+if [ -e "$skills_dir/ssh" ] ; then
+    ! [ -L "$skills_dir/ssh" -a -d "$skills_dir/ssh" ] && echo >&2 "$0: $skills_dir/ssh already exists, but is not a symbolic link to a directory; not replacing" && exit 2
+    rm "$skills_dir/ssh"
 fi
 
-chmod +x "$dispatch"
-
-mkdir -p "$bin_dir"
-
-# Replace any existing symlink/file.
-if [[ -L "$link_path" || -e "$link_path" ]]; then
-  rm -f "$link_path"
+if [ -e "$exe_dir/claude-ssh" ] ; then
+    ! [ -L "$exe_dir/claude-ssh" -a -f "$exe_dir/claude-ssh" ] && echo >&2 "$0: $exe_dir/claude-ssh already exists, but is not a symbolic link to a regular file; not replacing" && exit 2
+    rm "$exe_dir/claude-ssh"
 fi
-ln -s "$dispatch" "$link_path"
-echo "Linked: $link_path -> $dispatch"
 
-# Check PATH.
-case ":$PATH:" in
-  *":$bin_dir:"*)
-    echo ""
-    echo "[OK] $bin_dir is on your PATH."
-    ;;
-  *)
-    echo ""
-    echo "[!] $bin_dir is NOT on your PATH yet."
-    echo "    Add this line to your shell rc (~/.bashrc, ~/.zshrc, ~/.profile):"
-    echo ""
-    echo '        export PATH="$HOME/.local/bin:$PATH"'
-    echo ""
-    echo "    Then restart your shell, or run that line now in the current shell."
-    ;;
-esac
+ln -s -- "$skills_rel_dir" "$skills_dir/ssh"
+ln -s -- "$exe_rel_dir/scripts/ssh.sh" "$exe_dir/claude-ssh"
 
 echo ""
 echo "=== Install complete ==="
@@ -53,6 +37,5 @@ echo "Open host:  claude-ssh open <your-ssh-alias>"
 echo ""
 echo "Suggested allowlist for ~/.claude/settings.json:"
 echo ""
-echo "   \"Bash($HOME/.claude/skills/ssh/scripts/ssh.sh*)\""
-echo "   \"Bash($link_path*)\""
+echo "   \"Bash($exe_dir/claude-ssh)\""
 echo ""
