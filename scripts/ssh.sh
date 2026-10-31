@@ -5,6 +5,49 @@ set -uo pipefail
 sock_for() { printf '/tmp/cm-%s' "$1"; }
 log_for()  { printf '/tmp/ssh-%s.log' "$1"; }
 
+declare -A config
+script_argv0="$0"
+
+parse_config() {
+  # Automatically resolve a config file located next to the script
+  local config_file="$(dirname -- "$script_argv0")/config.ini"
+  
+  if [[ -f "$config_file" ]]; then
+      while IFS= read -r line || [[ -n "$line" ]]; do
+          # Strip leading whitespace to handle indented comments safely
+          line="${line#"${line%%[![:space:]]*}"}"
+  
+          # Skip empty lines and lines starting with '#'
+          if [[ -z "$line" || "$line" == \#* ]]; then
+              continue
+          fi
+  
+          # Ensure the line actually contains a key-value pair
+          if [[ "$line" == *"="* ]]; then
+              # Extract everything before the first '=' as the key
+              key="${line%%=*}"
+              # Extract everything after the first '=' as the value
+              value="${line#*=}"
+  
+              # Trim trailing whitespace from the key
+              key="${key%"${key##*[![:space:]]}"}"
+  
+              # Trim leading and trailing whitespace from the value
+              value="${value#"${value%%[![:space:]]*}"}"
+              value="${value%"${value##*[![:space:]]}"}"
+  
+              # Store in the associative array
+              config["$key"]="$value"
+          fi
+      done < "$config_file"
+  fi
+
+  ssh_open_args=()
+
+  local ssh_config="${config["ssh-config"]:-}"
+  [ -n "$ssh_config" ] && ssh_open_args+=( -F "$ssh_config" )
+}
+
 require_master() {
   local h="$1" sock; sock=$(sock_for "$h")
   if [[ ! -S "$sock" ]]; then
@@ -15,15 +58,22 @@ require_master() {
 
 stamp() { date '+%Y-%m-%d %H:%M:%S.%3N' 2>/dev/null || date '+%Y-%m-%d %H:%M:%S'; }
 short_stamp() { date '+%H:%M:%S.%3N' 2>/dev/null || date '+%H:%M:%S'; }
+run_ssh() {
+  ssh "${ssh_open_args[@]}" "$@" || exit $?
+}
 
 # ----- open ------------------------------------------------------------------
 cmd_open() {
   local h="${1:?usage: ssh.sh open <host>}"
+
+  parse_config
   local sock log; sock=$(sock_for "$h"); log=$(log_for "$h")
 
   # Reuse existing live master.
   if [[ -S "$sock" ]]; then
-    if ssh -S "$sock" -O check "$h" >/dev/null 2>&1; then
+    echo "X"
+
+    if run_ssh -S "$sock" -O check "$h" >/dev/null 2>&1; then
       local s; s=$(stamp)
       if [[ ! -f "$log" ]]; then
         printf '[%s] === ssh master found (already open) for %q ===\n\n' "$s" "$h" > "$log"
@@ -40,19 +90,19 @@ Watch live from another terminal:
 EOF
       return 0
     fi
-    ssh -S "$sock" -O exit "$h" >/dev/null 2>&1 || true
+    run_ssh -S "$sock" -O exit "$h" >/dev/null 2>&1 || true
     sleep 0.2
     rm -f "$sock"
   fi
 
   # Probe non-interactively.
-  if ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new "$h" exit 0 >/dev/null 2>&1; then
-    ssh -M -S "$sock" -fN \
+  if run_ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new "$h" exit 0 >/dev/null 2>&1; then
+    run_ssh -M -S "$sock" -fN \
       -o ControlPersist=yes \
       -o ServerAliveInterval=30 \
       -o ServerAliveCountMax=3 \
       "$h"
-    if ! ssh -S "$sock" -O check "$h" >/dev/null 2>&1; then
+    if ! run_ssh -S "$sock" -O check "$h" >/dev/null 2>&1; then
       echo "Master opened but -O check failed. Try: ssh.sh close $h and retry." >&2
       exit 3
     fi
@@ -128,10 +178,12 @@ EOF
 # master stays alive.
 cmd_auth() {
   local h="${1:?usage: ssh.sh auth <host>}"
+
+  parse_config
   local sock log; sock=$(sock_for "$h"); log=$(log_for "$h")
 
   if [[ -S "$sock" ]]; then
-    if ssh -S "$sock" -O check "$h" >/dev/null 2>&1; then
+    if run_ssh -S "$sock" -O check "$h" >/dev/null 2>&1; then
       echo "Master already open for '$h'. Nothing to do."
       echo "(If the master appears stale, run: claude-ssh close $h  then retry.)"
       return 0
@@ -156,7 +208,7 @@ The master will end at that point.
 ----- ssh starts now -----
 EOF
 
-  exec ssh -M -S "$sock" -N \
+  run_ssh -M -S "$sock" -N \
     -o ControlPersist=600 \
     -o ServerAliveInterval=30 \
     -o ServerAliveCountMax=3 \
@@ -169,6 +221,8 @@ cmd_call() {
   shift
   if [[ $# -eq 0 ]]; then echo "usage: ssh.sh call <host> <command...>" >&2; exit 1; fi
   local cmd="$*"
+
+  parse_config
   require_master "$h"
   local sock log; sock=$(sock_for "$h"); log=$(log_for "$h")
 
@@ -176,7 +230,7 @@ cmd_call() {
 
   local mux_pat='mux_client_request_session'
   set +e
-  ssh -n -S "$sock" "$h" "$cmd" \
+  run_ssh -n -S "$sock" "$h" "$cmd" \
     > >(while IFS= read -r line; do printf '%s\n' "$line" >> "$log"; printf '%s\n' "$line"; done) \
     2> >(while IFS= read -r line; do [[ "$line" =~ $mux_pat ]] && continue; printf '[stderr] %s\n' "$line" >> "$log"; printf '%s\n' "$line" >&2; done)
   local code=$?
@@ -191,6 +245,8 @@ cmd_put() {
   local h="${1:?usage: ssh.sh put <host> <local> <remote>}"
   local local_path="${2:?missing local path}"
   local remote_path="${3:?missing remote path}"
+
+  parse_config
   require_master "$h"
   [[ -e "$local_path" ]] || { echo "Local file not found: $local_path" >&2; exit 4; }
   local sock log; sock=$(sock_for "$h"); log=$(log_for "$h")
@@ -215,6 +271,8 @@ cmd_get() {
   local h="${1:?usage: ssh.sh get <host> <remote> <local>}"
   local remote_path="${2:?missing remote path}"
   local local_path="${3:?missing local path}"
+
+  parse_config
   require_master "$h"
   local sock log; sock=$(sock_for "$h"); log=$(log_for "$h")
   printf '[%s] >>> get %s:%s -> %s\n' "$(stamp)" "$h" "$remote_path" "$local_path" >> "$log"
@@ -242,7 +300,7 @@ cmd_close() {
   local h="${1:?usage: ssh.sh close <host>}"
   local sock log; sock=$(sock_for "$h"); log=$(log_for "$h")
   if [[ -S "$sock" ]]; then
-    ssh -S "$sock" -O exit "$h" >/dev/null 2>&1 || true
+    run_ssh -S "$sock" -O exit "$h" >/dev/null 2>&1 || true
     sleep 0.2
   fi
   rm -f "$sock"
@@ -266,7 +324,7 @@ cmd_status() {
     local h="${s##*/cm-}"
     local log; log=$(log_for "$h")
     local status='DEAD'
-    if ssh -S "$s" -O check "$h" >/dev/null 2>&1; then status='ALIVE'; fi
+    if run_ssh -S "$s" -O check "$h" >/dev/null 2>&1; then status='ALIVE'; fi
     printf '%-30s %-8s %s\n' "$h" "$status" "$log"
   done
 }
