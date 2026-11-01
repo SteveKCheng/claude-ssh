@@ -36,9 +36,13 @@ After running the installer once, the dispatcher is on PATH as `claude-ssh`:
 | `call`   | `<host> <cmd...>` | Run one command via the master (aliases: `exec`, `run`, `sh`) |
 | `put`    | `<host> <local> <remote>` | Upload via scp+master |
 | `get`    | `<host> <remote> <local>` | Download via scp+master |
+| `local-forward` | <host> <local-port> <remote-dest> | Listen on local TCP port, and server delivers connections to `<remote-dest>` |
+| `remote-forward` | <host> <remote-port> <local-dest> | Server listens on TCP port, and connects back to `<local-dest>` here |
 | `close`  | `<host>` | Close the master |
 | `status` | - | List active masters with ALIVE/DEAD per host |
 | `help`   | - | Show usage |
+
+`<remote-dest>` and `<local-dest>` may specify a TCP address of the form `host:port`, or the path to a Unix domain socket.
 
 If `claude-ssh` isn't on PATH yet, run the installer once:
 - Windows: `& "$HOME\.claude\skills\ssh\install.ps1"`
@@ -111,6 +115,8 @@ claude-ssh open    <host>
 claude-ssh auth    <host>                    # interactive; works under Claude Code's !
 claude-ssh call    <host> '<remote cmd>'
 claude-ssh put     <host> <local> <remote>
+claude-ssh local-forward <host> <local-port> <remote-dest>
+claude-ssh remote-forward <host> <remote-port> <local-dest>
 claude-ssh get     <host> <remote> <local>
 claude-ssh close   <host>
 claude-ssh status

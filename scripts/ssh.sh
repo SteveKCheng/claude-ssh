@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#vim: set tabstop=4 shiftwidth=4 expandtab:
 # /ssh dispatcher (POSIX). Subcommands: open, call, put, get, close, status, help.
 set -uo pipefail
 
@@ -329,6 +330,36 @@ cmd_status() {
   done
 }
 
+cmd_local_forward()
+{
+  local h="${1:?usage: ssh.sh local-forward <host> <local-port> <remote-dest>}"
+  local local_port="${2:?missing local port}"
+  local remote_dest="${3:?missing remote destination}"
+
+  parse_config
+  require_master "$h"
+  local sock log; sock=$(sock_for "$h"); log=$(log_for "$h")
+
+  run_ssh -n -S "$sock" -O forward -L "${local_port}:${remote_dest}" -- "$h" 
+
+  printf '[%s] >>> local-forward %s -> %s\n' "$(stamp)" "$h" "$local_port" "$remote_dest" >> "$log"  
+}
+
+cmd_remote_forward()
+{
+  local h="${1:?usage: ssh.sh remote-forward <host> <remote-port> <local-dest>}"
+  local remote_port="${2:?missing remote port}"
+  local local_dest="${3:?missing local destination}"
+
+  parse_config
+  require_master "$h"
+  local sock log; sock=$(sock_for "$h"); log=$(log_for "$h")
+
+  run_ssh -n -S "$sock" -O forward -R "${remote_port}:${local_dest}" -- "$h" 
+
+  printf '[%s] >>> remote-forward %s -> %s\n' "$(stamp)" "$h" "$remote_port" "$local_dest" >> "$log"  
+}
+
 # ----- help ------------------------------------------------------------------
 cmd_help() {
   cat <<'EOF'
@@ -340,6 +371,10 @@ Usage:
   claude-ssh call  <host> <command...>      Run a command via the master
   claude-ssh put   <host> <local> <remote>  Upload a file (scp via master)
   claude-ssh get   <host> <remote> <local>  Download a file (scp via master)
+  claude-ssh local-forward <host> \         Accept on a local TCP port,
+    <local-port> <remote-dest>               forwarding connections to the remote side
+  claude-ssh remote-forward <host> \        Request the remote side to accept connections
+    <remote-port> <local-dest>               on its TCP port, then forward them here
   claude-ssh close <host>                   Close the master
   claude-ssh status                         List active masters
   claude-ssh help                           Show this help
@@ -361,6 +396,8 @@ case "$sub" in
   call|exec|run|sh) cmd_call  "$@" ;;
   put)             cmd_put   "$@" ;;
   get)             cmd_get   "$@" ;;
+  local-forward)   cmd_local_forward "$@" ;;
+  remote-forward)  cmd_remote_forward "$@" ;;
   close)           cmd_close "$@" ;;
   status)          cmd_status      ;;
   help|-h|--help)  cmd_help        ;;
